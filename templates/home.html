@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block title %}Welcome — ContactBook{% endblock %}
+{% block content %}
+<div class="text-center py-20">
+  <h1 class="text-4xl font-bold text-blue-600 mb-4">ContactBook</h1>
+  <p class="text-gray-500 mb-8">Multi-user contact management system</p>
+  <div class="flex gap-4 justify-center">
+    <a href="/accounts/login/" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium transition-colors">Sign in</a>
+    <a href="/accounts/register/" class="bg-white border border-gray-200 hover:border-blue-400 text-gray-700 px-6 py-3 rounded-xl font-medium transition-colors">Register</a>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,310 @@
+{% extends 'base.html' %}
+{% block title %}Settings — ContactBook{% endblock %}
+{% block content %}
+
+<div class="max-w-3xl mx-auto">
+
+  <!-- Page header -->
+  <div class="mb-7">
+    <h1 class="text-2xl font-bold text-gray-800">Settings</h1>
+    <p class="text-sm text-gray-400 mt-1">Manage your account, categories, and contact data</p>
+  </div>
+
+  <!-- ── Account Info ─────────────────────────────────────────── -->
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
+    <div class="px-6 py-5 border-b border-gray-50 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+        <span class="material-icons-round text-blue-600 text-base">manage_accounts</span>
+      </div>
+      <div>
+        <h2 class="font-semibold text-gray-800 text-sm">Account Info</h2>
+        <p class="text-xs text-gray-400 mt-0.5">Your profile and account details</p>
+      </div>
+    </div>
+    <div class="divide-y divide-gray-50">
+      <div class="px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="material-icons-round text-gray-300 text-xl">person_outline</span>
+          <div>
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Username</p>
+            <p class="text-sm font-medium text-gray-800">{{ user.username }}</p>
+          </div>
+        </div>
+      </div>
+      <div class="px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="material-icons-round text-gray-300 text-xl">mail_outline</span>
+          <div>
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Email address</p>
+            <p class="text-sm font-medium text-gray-800">{{ user.email|default:"Not set" }}</p>
+          </div>
+        </div>
+      </div>
+      <div class="px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="material-icons-round text-gray-300 text-xl">verified_user</span>
+          <div>
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Account type</p>
+            <p class="text-sm font-medium text-gray-800 capitalize">{{ user.profile.role }}</p>
+          </div>
+        </div>
+        <span class="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-full border border-blue-100">
+          {{ user.profile.role|capfirst }}
+        </span>
+      </div>
+      <div class="px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="material-icons-round text-gray-300 text-xl">people</span>
+          <div>
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Total contacts</p>
+            <p class="text-sm font-medium text-gray-800">{{ total_contacts }}</p>
+          </div>
+        </div>
+        <a href="{% url 'contact_list' %}"
+          class="text-xs text-blue-600 hover:underline font-medium">
+          View all →
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Duplicate Management ──────────────────────────────────── -->
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
+    <div class="px-6 py-5 border-b border-gray-50 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center">
+          <span class="material-icons-round text-amber-600 text-base">content_copy</span>
+        </div>
+        <div>
+          <h2 class="font-semibold text-gray-800 text-sm">Duplicate Contacts</h2>
+          <p class="text-xs text-gray-400 mt-0.5">
+            Confirmed duplicates share the same phone or email.
+            Possible duplicates share the same name only.
+          </p>
+        </div>
+      </div>
+      {% if duplicate_count %}
+      <div class="flex flex-col items-end gap-1">
+        {% if confirmed_count %}
+        <span class="px-3 py-1 bg-amber-50 border border-amber-100 text-amber-700 text-xs font-semibold rounded-full">
+          {{ confirmed_count }} confirmed
+        </span>
+        {% endif %}
+        {% if possible_count %}
+        <span class="px-3 py-1 bg-blue-50 border border-blue-100 text-blue-600 text-xs font-semibold rounded-full">
+          {{ possible_count }} possible
+        </span>
+        {% endif %}
+      </div>
+      {% else %}
+      <span class="px-3 py-1 bg-green-50 border border-green-100 text-green-700 text-xs font-semibold rounded-full flex items-center gap-1">
+        <span class="material-icons-round text-xs">check_circle</span>
+        No duplicates
+      </span>
+      {% endif %}
+    </div>
+  
+    <!-- How duplicates get here — info banner -->
+    <div class="px-6 py-3 bg-blue-50 border-b border-blue-100 flex items-start gap-3">
+      <span class="material-icons-round text-blue-500 text-base mt-0.5 flex-shrink-0">info_outline</span>
+      <p class="text-xs text-blue-700 leading-relaxed">
+        Duplicates are created when importing files where the same phone number or email appears
+        under different names — for example "Mum" and "Mama" with the same number.
+        Manual contact creation always blocks exact duplicates. Use the merge or dismiss actions below
+        to clean up your address book.
+      </p>
+    </div>
+  
+    {% if duplicate_groups %}
+      <div class="divide-y divide-gray-50">
+        {% for group in duplicate_groups %}
+        <div class="px-6 py-5">
+  
+          <!-- Match reason badge -->
+          <div class="flex items-center gap-2 mb-3">
+            {% if group.confirmed %}
+              {% if group.match_reason == 'phone' %}
+              <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 border border-amber-100 text-amber-700 text-xs font-semibold rounded-full">
+                <span class="material-icons-round text-xs">phone</span>
+                Same phone number
+              </span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 border border-amber-100 text-amber-700 text-xs font-semibold rounded-full">
+                <span class="material-icons-round text-xs">alternate_email</span>
+                Same email address
+              </span>
+              {% endif %}
+            {% else %}
+            <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 border border-blue-100 text-blue-600 text-xs font-semibold rounded-full">
+              <span class="material-icons-round text-xs">help_outline</span>
+              Possible duplicate — same name, different contact info
+            </span>
+            {% endif %}
+          </div>
+  
+          <!-- Group members -->
+          <div class="space-y-2 mb-4">
+            {% for contact in group.contacts %}
+            <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+              {% if contact.image %}
+                <img src="{{ contact.image.url }}"
+                  class="w-10 h-10 rounded-xl object-cover flex-shrink-0 shadow-sm"/>
+              {% else %}
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm"
+                  style="background-color: {{ contact.get_avatar_color }}">
+                  {{ contact.get_initials }}
+                </div>
+              {% endif %}
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-gray-800">{{ contact.full_name }}</p>
+                <p class="text-xs text-gray-400 mt-0.5">
+                  {{ contact.phone_number }}
+                  {% if contact.email %} · {{ contact.email }}{% endif %}
+                  {% if contact.category %} · {{ contact.category.name }}{% endif %}
+                </p>
+              </div>
+              {% if forloop.first %}
+              <span class="px-2 py-0.5 bg-blue-50 text-blue-600 text-xs font-medium rounded-full border border-blue-100 flex-shrink-0">
+                Primary
+              </span>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+  
+          <!-- What merge will do -->
+          <p class="text-xs text-gray-400 mb-3 flex items-center gap-1">
+            <span class="material-icons-round text-xs">merge</span>
+            Merging keeps "{{ group.contacts.0.full_name }}" and deletes the other{{ group.contacts|length|add:"-1"|pluralize }}.
+            Any missing fields are copied across before deletion.
+          </p>
+  
+          <!-- Actions -->
+          <div class="flex gap-3">
+            <form method="post" action="{% url 'merge_contacts' %}" class="flex-1">
+              {% csrf_token %}
+              <input type="hidden" name="primary_id" value="{{ group.contacts.0.id }}"/>
+              {% for contact in group.contacts %}
+                <input type="hidden" name="duplicate_ids" value="{{ contact.id }}"/>
+              {% endfor %}
+              <button type="submit"
+                class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm">
+                <span class="material-icons-round text-base">merge</span>
+                Merge into "{{ group.contacts.0.full_name }}"
+              </button>
+            </form>
+            <form method="post" action="{% url 'dismiss_duplicates' %}">
+              {% csrf_token %}
+              <button type="submit"
+                class="flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors"
+                title="Dismiss — these are intentionally different contacts">
+                <span class="material-icons-round text-base">close</span>
+                Dismiss
+              </button>
+            </form>
+          </div>
+  
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="flex flex-col items-center justify-center py-12 text-center">
+        <span class="material-icons-round text-green-200 text-5xl mb-3">task_alt</span>
+        <p class="text-sm font-medium text-gray-600">All clean</p>
+        <p class="text-xs text-gray-400 mt-1">No duplicate contacts detected in your address book</p>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- ── Category Management ───────────────────────────────────── -->
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
+    <div class="px-6 py-5 border-b border-gray-50 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center">
+          <span class="material-icons-round text-purple-600 text-base">label</span>
+        </div>
+        <div>
+          <h2 class="font-semibold text-gray-800 text-sm">Categories</h2>
+          <p class="text-xs text-gray-400 mt-0.5">Manage how your contacts are grouped</p>
+        </div>
+      </div>
+      <span class="text-xs text-gray-400">{{ categories|length }} total</span>
+    </div>
+
+    <!-- Add category form -->
+    <div class="px-6 py-4 border-b border-gray-50 bg-gray-50">
+      <form method="post" action="{% url 'add_category' %}" class="flex gap-3">
+        {% csrf_token %}
+        <div class="relative flex-1">
+          <span class="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-base">add_circle_outline</span>
+          <input type="text" name="name" placeholder="New category name"
+            class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"/>
+        </div>
+        <button type="submit"
+          class="flex items-center gap-1.5 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm">
+          <span class="material-icons-round text-base">add</span>
+          Add
+        </button>
+      </form>
+    </div>
+
+    <!-- Category list -->
+    <div class="divide-y divide-gray-50">
+      {% for category in categories %}
+      <div class="px-6 py-3.5 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="material-icons-round text-gray-300 text-base">label_outline</span>
+          <span class="text-sm font-medium text-gray-800">{{ category.name }}</span>
+          {% if category.is_default %}
+          <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">Default</span>
+          {% endif %}
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-gray-400">
+            {{ category.contacts.count }} contact{{ category.contacts.count|pluralize }}
+          </span>
+          {% if not category.is_default %}
+          <form method="post" action="{% url 'delete_category' category.id %}"
+            onsubmit="return confirm('Delete category \'{{ category.name }}\'? Contacts in this category will become uncategorised.')">
+            {% csrf_token %}
+            <button type="submit"
+              class="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
+              <span class="material-icons-round text-base">delete_outline</span>
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── Danger zone ───────────────────────────────────────────── -->
+  <div class="bg-white rounded-2xl border border-red-100 shadow-sm overflow-hidden">
+    <div class="px-6 py-5 border-b border-red-50 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">
+        <span class="material-icons-round text-red-500 text-base">warning_amber</span>
+      </div>
+      <div>
+        <h2 class="font-semibold text-gray-800 text-sm">Danger Zone</h2>
+        <p class="text-xs text-gray-400 mt-0.5">Irreversible actions — proceed with caution</p>
+      </div>
+    </div>
+    <div class="px-6 py-5 flex items-center justify-between">
+      <div>
+        <p class="text-sm font-medium text-gray-800">Sign out of all sessions</p>
+        <p class="text-xs text-gray-400 mt-0.5">Logs you out and clears your session data</p>
+      </div>
+      <form method="post" action="{% url 'logout' %}">
+        {% csrf_token %}
+        <button type="submit"
+          class="flex items-center gap-2 px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium rounded-xl transition-colors border border-red-100">
+          <span class="material-icons-round text-base">logout</span>
+          Sign out
+        </button>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

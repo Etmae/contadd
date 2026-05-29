@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}ContactBook{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet"/>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .sidebar-link { transition: all 0.15s ease; }
+    .sidebar-link:hover { background-color: #eff6ff; color: #2563eb; }
+    .sidebar-link:hover .material-icons-round { color: #2563eb; }
+    .sidebar-link.active { background-color: #eff6ff; color: #2563eb; font-weight: 500; }
+    .sidebar-link.active .material-icons-round { color: #2563eb; }
+    .sidebar-collapsed { width: 64px !important; }
+    .sidebar-collapsed .nav-label,
+    .sidebar-collapsed .user-info,
+    .sidebar-collapsed .logo-text { display: none !important; }
+    .sidebar-collapsed .sidebar-link { justify-content: center; padding-left: 0; padding-right: 0; }
+    .sidebar-collapsed .user-avatar-wrap { justify-content: center; padding: 0; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 99px; }
+  </style>
+</head>
+
+<body class="bg-gray-50 min-h-screen">
+
+{% if user.is_authenticated %}
+
+<!-- Mobile overlay backdrop -->
+<div id="sidebar-backdrop"
+  class="fixed inset-0 bg-black/30 z-20 hidden md:hidden"
+  onclick="closeMobileSidebar()">
+</div>
+
+<div class="flex h-screen overflow-hidden">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────── -->
+  <aside id="sidebar"
+    class="w-56 bg-white border-r border-gray-100 flex flex-col flex-shrink-0 shadow-sm
+           fixed md:relative z-30 h-full
+           -translate-x-full md:translate-x-0
+           transition-all duration-200">
+
+    <!-- Logo row -->
+    <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between min-h-[64px]">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+          <span class="material-icons-round text-white text-base">contacts</span>
+        </div>
+        <span class="font-bold text-gray-800 text-base logo-text">ContactBook</span>
+      </div>
+      <!-- Collapse toggle (desktop) -->
+      <button onclick="toggleSidebar()"
+        id="collapse-btn"
+        class="hidden md:flex w-7 h-7 items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 transition-colors flex-shrink-0"
+        title="Toggle sidebar">
+        <span class="material-icons-round text-base" id="collapse-icon">chevron_left</span>
+      </button>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1 px-3 py-4 space-y-0.5">
+      <a href="{% url 'dashboard' %}"
+        class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-600 text-sm
+          {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
+        title="Dashboard">
+        <span class="material-icons-round text-gray-400 text-xl flex-shrink-0">dashboard</span>
+        <span class="nav-label">Dashboard</span>
+      </a>
+      <a href="{% url 'contact_list' %}"
+        class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-600 text-sm
+          {% if request.resolver_match.url_name == 'contact_list' %}active{% endif %}"
+        title="Contacts">
+        <span class="material-icons-round text-gray-400 text-xl flex-shrink-0">people</span>
+        <span class="nav-label">Contacts</span>
+      </a>
+      <a href="{% url 'import_export' %}"
+      class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-600 text-sm
+        {% if request.resolver_match.url_name == 'import_export' %}active{% endif %}"
+      title="Import / Export">
+      <span class="material-icons-round text-gray-400 text-xl flex-shrink-0">swap_vert</span>
+      <span class="nav-label">Import / Export</span>
+    </a>
+    <a href="{% url 'settings' %}"
+    class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-600 text-sm
+      {% if request.resolver_match.url_name == 'settings' %}active{% endif %}"
+    title="Settings">
+    <span class="material-icons-round text-gray-400 text-xl flex-shrink-0">tune</span>
+    <span class="nav-label">Settings</span>
+  </a>
+      {% if user.profile.role == 'admin' %}
+      <a href="{% url 'admin_panel' %}"
+        class="sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-600 text-sm
+          {% if request.resolver_match.url_name == 'admin_panel' %}active{% endif %}"
+        title="Admin Panel">
+        <span class="material-icons-round text-gray-400 text-xl flex-shrink-0">admin_panel_settings</span>
+        <span class="nav-label">Admin Panel</span>
+      </a>
+      {% endif %}
+    </nav>
+
+    <!-- User + sign out -->
+    <div class="px-3 py-4 border-t border-gray-100">
+      <div class="user-avatar-wrap flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50 mb-1">
+        <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+          <span class="text-blue-600 font-semibold text-xs">{{ user.username|first|upper }}</span>
+        </div>
+        <div class="min-w-0 user-info">
+          <p class="text-sm font-medium text-gray-800 truncate">{{ user.username }}</p>
+          <p class="text-xs text-gray-400 truncate">
+            {% if user.profile.role == 'admin' %}Administrator{% else %}User{% endif %}
+          </p>
+        </div>
+      </div>
+      <form method="post" action="{% url 'logout' %}">
+        {% csrf_token %}
+        <button type="submit"
+          class="sidebar-link w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-500 text-sm hover:bg-red-50"
+          title="Sign out">
+          <span class="material-icons-round text-red-400 text-xl flex-shrink-0">logout</span>
+          <span class="nav-label">Sign out</span>
+        </button>
+      </form>
+    </div>
+
+  </aside>
+
+  <!-- ── Main content ─────────────────────────────────────────── -->
+  <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+
+    <!-- Mobile top bar -->
+    <div class="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 flex-shrink-0">
+      <button onclick="openMobileSidebar()"
+        class="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
+        <span class="material-icons-round text-xl">menu</span>
+      </button>
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 bg-blue-600 rounded-md flex items-center justify-center">
+          <span class="material-icons-round text-white text-sm">contacts</span>
+        </div>
+        <span class="font-bold text-gray-800 text-sm">ContactBook</span>
+      </div>
+    </div>
+
+    <!-- Flash messages -->
+    {% if messages %}
+    <div class="px-4 md:px-6 pt-4 space-y-2 flex-shrink-0">
+      {% for message in messages %}
+      <div class="flex items-center gap-3 p-3 rounded-xl text-sm
+        {% if message.tags == 'error' %}bg-red-50 border border-red-100 text-red-700
+        {% else %}bg-green-50 border border-green-100 text-green-700{% endif %}">
+        <span class="material-icons-round text-base">
+          {% if message.tags == 'error' %}error_outline{% else %}check_circle_outline{% endif %}
+        </span>
+        {{ message }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Page content -->
+    <div class="flex-1 overflow-auto {% if request.resolver_match.url_name != 'contact_list' %}p-4 md:p-6{% endif %}">
+
+{% else %}
+
+<!-- Guest layout: split panel -->
+<div class="min-h-screen flex">
+
+  {% if messages %}
+  <div class="fixed top-4 left-1/2 -translate-x-1/2 z-50 space-y-2 w-full max-w-md px-4">
+    {% for message in messages %}
+    <div class="flex items-center gap-3 p-3 rounded-xl text-sm shadow-sm
+      {% if message.tags == 'error' %}bg-red-50 border border-red-100 text-red-700
+      {% else %}bg-green-50 border border-green-100 text-green-700{% endif %}">
+      <span class="material-icons-round text-base">
+        {% if message.tags == 'error' %}error_outline{% else %}check_circle_outline{% endif %}
+      </span>
+      {{ message }}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+{% endif %}
+
+  {% block content %}{% endblock %}
+
+{% if user.is_authenticated %}
+    </div>
+
+  </div>
+</div>
+
+{% else %}
+
+</div>
+
+{% endif %}
+
+<script>
+  // ── Sidebar collapse (desktop) ─────────────────────────────────
+  const sidebar    = document.getElementById('sidebar');
+  const collapseIcon = document.getElementById('collapse-icon');
+
+  function applyCollapse(collapsed) {
+    if (!sidebar) return;
+    if (collapsed) {
+      sidebar.classList.add('sidebar-collapsed');
+      if (collapseIcon) collapseIcon.textContent = 'chevron_right';
+    } else {
+      sidebar.classList.remove('sidebar-collapsed');
+      if (collapseIcon) collapseIcon.textContent = 'chevron_left';
+    }
+  }
+
+  function toggleSidebar() {
+    const isCollapsed = sidebar.classList.contains('sidebar-collapsed');
+    applyCollapse(!isCollapsed);
+    localStorage.setItem('sb_collapsed', !isCollapsed ? '1' : '0');
+  }
+
+  // Restore on load
+  if (localStorage.getItem('sb_collapsed') === '1') {
+    applyCollapse(true);
+  }
+
+  // ── Mobile sidebar ─────────────────────────────────────────────
+  const backdrop = document.getElementById('sidebar-backdrop');
+
+  function openMobileSidebar() {
+    sidebar.classList.remove('-translate-x-full');
+    backdrop.classList.remove('hidden');
+  }
+
+  function closeMobileSidebar() {
+    sidebar.classList.add('-translate-x-full');
+    backdrop.classList.add('hidden');
+  }
+</script>
+
+</body>
+</html>

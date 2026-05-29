@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard — ContactBook{% endblock %}
+{% block content %}
+
+<!-- Page header -->
+<div class="mb-7">
+  <h1 class="text-2xl font-bold text-gray-800">Dashboard</h1>
+  <p class="text-sm text-gray-400 mt-1">Welcome back, <span class="text-gray-600 font-medium">{{ user.username }}</span></p>
+</div>
+
+<!-- Stats row -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+    <div class="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+      <span class="material-icons-round text-blue-600 text-xl">people</span>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-gray-800">{{ total_contacts }}</p>
+      <p class="text-xs text-gray-400 mt-0.5">Total contacts</p>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+    <div class="w-11 h-11 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
+      <span class="material-icons-round text-purple-600 text-xl">label</span>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-gray-800">{{ total_categories }}</p>
+      <p class="text-xs text-gray-400 mt-0.5">Categories</p>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+    <div class="w-11 h-11 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
+      <span class="material-icons-round text-green-600 text-xl">file_download</span>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-gray-800">{{ recent_imports|length }}</p>
+      <p class="text-xs text-gray-400 mt-0.5">Recent imports</p>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+    <div class="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+      <span class="material-icons-round text-amber-600 text-xl">verified_user</span>
+    </div>
+    <div>
+      <p class="text-sm font-semibold text-gray-800 capitalize">{{ user.profile.role }}</p>
+      <p class="text-xs text-gray-400 mt-0.5">Account type</p>
+    </div>
+  </div>
+</div>
+
+<!-- Quick actions -->
+<div class="flex gap-3 mb-7">
+  <a href="{% url 'add_contact' %}"
+    class="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm">
+    <span class="material-icons-round text-base">person_add</span>
+    Add Contact
+  </a>
+  <a href="{% url 'contact_list' %}"
+    class="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 hover:border-blue-300 text-gray-700 text-sm font-medium rounded-xl transition-colors shadow-sm">
+    <span class="material-icons-round text-base">people</span>
+    View All Contacts
+  </a>
+</div>
+
+<!-- Content grid -->
+<div class="grid md:grid-cols-2 gap-6">
+
+  <!-- Recent contacts -->
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-50 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="material-icons-round text-gray-400 text-base">history</span>
+        <h2 class="font-semibold text-gray-800 text-sm">Recent Contacts</h2>
+      </div>
+      <a href="{% url 'contact_list' %}?sort=newest"
+        class="text-xs text-blue-600 hover:underline font-medium">View all</a>
+    </div>
+    {% if recent_contacts %}
+      <div class="divide-y divide-gray-50">
+        {% for contact in recent_contacts %}
+        <a href="{% url 'contact_list' %}?contact={{ contact.id }}"
+          class="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors">
+          {% if contact.image %}
+            <img src="{{ contact.image.url }}" class="w-9 h-9 rounded-xl object-cover shadow-sm"/>
+          {% else %}
+            <div class="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold shadow-sm"
+              style="background-color: {{ contact.get_avatar_color }}">
+              {{ contact.get_initials }}
+            </div>
+          {% endif %}
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-gray-800 truncate">{{ contact.full_name }}</p>
+            <p class="text-xs text-gray-400 truncate">{{ contact.phone_number }}</p>
+          </div>
+          <span class="material-icons-round text-gray-300 text-base">chevron_right</span>
+        </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="flex flex-col items-center justify-center py-10 text-center">
+        <span class="material-icons-round text-gray-200 text-4xl mb-2">people_outline</span>
+        <p class="text-sm text-gray-400">No contacts yet.</p>
+        <a href="{% url 'add_contact' %}" class="text-xs text-blue-600 hover:underline mt-1">Add one →</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Recent imports -->
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-50 flex items-center gap-2">
+      <span class="material-icons-round text-gray-400 text-base">file_upload</span>
+      <h2 class="font-semibold text-gray-800 text-sm">Recent Imports</h2>
+    </div>
+    {% if recent_imports %}
+      <div class="divide-y divide-gray-50">
+        {% for log in recent_imports %}
+        <div class="px-5 py-3.5">
+          <div class="flex items-center gap-4">
+            <div class="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
+              <span class="material-icons-round text-green-600 text-base">check_circle_outline</span>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-gray-800">
+                {{ log.imported_count }} imported
+                <span class="text-gray-400 font-normal">·</span>
+                <span class="text-amber-600">{{ log.skipped_duplicates }} skipped</span>
+                <span class="text-gray-400 font-normal">·</span>
+                <span class="text-red-500">{{ log.failed_rows }} failed</span>
+              </p>
+              <p class="text-xs text-gray-400 mt-0.5">{{ log.created_at|date:"N j, Y — g:i A" }}</p>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="flex flex-col items-center justify-center py-10 text-center">
+        <span class="material-icons-round text-gray-200 text-4xl mb-2">upload_file</span>
+        <p class="text-sm text-gray-400">No imports yet.</p>
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

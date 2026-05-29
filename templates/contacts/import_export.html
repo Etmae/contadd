@@ -1,0 +1,433 @@
+{% extends 'base.html' %}
+{% block title %}Import & Export — ContactBook{% endblock %}
+{% block content %}
+
+
+{% if step == 'success' %}
+<!-- ════════════════════════════════════════════════════════════════
+     STEP 3 — SUCCESS
+════════════════════════════════════════════════════════════════ -->
+
+<div class="flex flex-col h-full">
+
+  <!-- Wizard header bar -->
+  <div class="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 flex-shrink-0">
+    <span class="text-sm text-gray-400">Import complete</span>
+    <h2 class="text-sm font-semibold text-gray-700">Import Contacts</h2>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="done_import"/>
+      <button type="submit"
+        class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm">
+        Done
+      </button>
+    </form>
+  </div>
+
+  <!-- Success body -->
+  <div class="flex-1 flex flex-col items-center justify-center bg-gray-50 text-center px-8">
+
+    <div class="w-20 h-20 rounded-full bg-blue-50 border-2 border-blue-100 flex items-center justify-center mb-6">
+      <span class="material-icons-round text-blue-500 text-4xl">check</span>
+    </div>
+
+    <h2 class="text-2xl font-bold text-gray-800 mb-2">Contacts Imported</h2>
+    <p class="text-gray-500 text-sm mb-8">Your new contacts are ready to view</p>
+
+    <!-- Result summary -->
+    <div class="flex flex-wrap justify-center gap-4 mb-8">
+      <div class="bg-white border border-gray-100 rounded-2xl px-6 py-4 shadow-sm text-center min-w-[120px]">
+        <p class="text-3xl font-bold text-green-600">{{ result.imported }}</p>
+        <p class="text-xs text-gray-500 mt-1">Imported</p>
+      </div>
+      {% if result.skipped %}
+      <div class="bg-white border border-gray-100 rounded-2xl px-6 py-4 shadow-sm text-center min-w-[120px]">
+        <p class="text-3xl font-bold text-amber-500">{{ result.skipped }}</p>
+        <p class="text-xs text-gray-500 mt-1">Duplicates skipped</p>
+      </div>
+      {% endif %}
+      {% if result.failed %}
+      <div class="bg-white border border-gray-100 rounded-2xl px-6 py-4 shadow-sm text-center min-w-[120px]">
+        <p class="text-3xl font-bold text-red-500">{{ result.failed }}</p>
+        <p class="text-xs text-gray-500 mt-1">Failed rows</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <a href="{% url 'contact_list' %}"
+      class="inline-flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 hover:border-blue-400 text-gray-700 text-sm font-medium rounded-xl transition-colors shadow-sm">
+      <span class="material-icons-round text-base">people</span>
+      View Contacts
+    </a>
+
+  </div>
+
+</div>
+
+
+{% elif step == 'preview' %}
+<!-- ════════════════════════════════════════════════════════════════
+     STEP 2 — PREVIEW / CONFIRM
+════════════════════════════════════════════════════════════════ -->
+
+<div class="flex flex-col h-full">
+
+  <!-- Wizard header bar -->
+  <div class="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 flex-shrink-0">
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="cancel_import"/>
+      <button type="submit" class="text-sm text-gray-500 hover:text-gray-800 transition-colors">
+        Cancel
+      </button>
+    </form>
+    <h2 class="text-sm font-semibold text-gray-700">Import Contacts</h2>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="confirm_import"/>
+      <button type="submit"
+        class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm">
+        Next
+      </button>
+    </form>
+  </div>
+
+  <!-- Preview body -->
+  <div class="flex-1 overflow-y-auto bg-gray-50 p-6">
+    <div class="max-w-3xl mx-auto">
+
+      <!-- Summary pills -->
+      <div class="flex flex-wrap gap-3 mb-6">
+        <div class="flex items-center gap-2 px-4 py-2 bg-white border border-gray-100 rounded-xl shadow-sm">
+          <span class="material-icons-round text-gray-400 text-base">table_rows</span>
+          <span class="text-sm font-medium text-gray-700">{{ total_rows }} total rows</span>
+        </div>
+        <div class="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-100 rounded-xl shadow-sm">
+          <span class="material-icons-round text-green-600 text-base">add_circle_outline</span>
+          <span class="text-sm font-medium text-green-700">{{ new_count }} new contacts</span>
+        </div>
+        {% if duplicate_count %}
+        <div class="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-100 rounded-xl shadow-sm">
+          <span class="material-icons-round text-amber-500 text-base">warning_amber</span>
+          <span class="text-sm font-medium text-amber-700">{{ duplicate_count }} duplicate{{ duplicate_count|pluralize }} will be skipped</span>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Detected columns -->
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
+        <div class="px-6 py-4 border-b border-gray-50">
+          <h3 class="font-semibold text-gray-800 text-sm">Detected Columns</h3>
+          <p class="text-xs text-gray-400 mt-0.5">Columns detected from your file headers</p>
+        </div>
+        <div class="divide-y divide-gray-50">
+          <div class="flex items-center px-6 py-3">
+            <span class="text-sm text-gray-600 w-40">name</span>
+            <span class="material-icons-round text-gray-300 text-base mx-4">arrow_forward</span>
+            <span class="text-sm font-medium text-gray-800 bg-blue-50 px-3 py-1 rounded-lg text-blue-700">Full Name</span>
+          </div>
+          <div class="flex items-center px-6 py-3">
+            <span class="text-sm text-gray-600 w-40">phone</span>
+            <span class="material-icons-round text-gray-300 text-base mx-4">arrow_forward</span>
+            <span class="text-sm font-medium text-gray-800 bg-blue-50 px-3 py-1 rounded-lg text-blue-700">Phone</span>
+          </div>
+          <div class="flex items-center px-6 py-3">
+            <span class="text-sm text-gray-600 w-40">email</span>
+            <span class="material-icons-round text-gray-300 text-base mx-4">arrow_forward</span>
+            <span class="text-sm font-medium text-gray-800 bg-blue-50 px-3 py-1 rounded-lg text-blue-700">Email</span>
+          </div>
+          <div class="flex items-center px-6 py-3">
+            <span class="text-sm text-gray-600 w-40">category</span>
+            <span class="material-icons-round text-gray-300 text-base mx-4">arrow_forward</span>
+            <span class="text-sm font-medium text-gray-800 bg-blue-50 px-3 py-1 rounded-lg text-blue-700">Category</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview table -->
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-50">
+          <h3 class="font-semibold text-gray-800 text-sm">Preview</h3>
+          <p class="text-xs text-gray-400 mt-0.5">
+            Showing first {{ preview_rows|length }} of {{ total_rows }} rows
+          </p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-gray-50">
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              {% for row in preview_rows %}
+              <tr class="hover:bg-gray-50 transition-colors">
+                <td class="px-6 py-3 font-medium text-gray-800">{{ row.name }}</td>
+                <td class="px-6 py-3 text-gray-600">{{ row.phone }}</td>
+                <td class="px-6 py-3 text-gray-500 text-xs">{{ row.email|default:"—" }}</td>
+                <td class="px-6 py-3">
+                  {% if row.category %}
+                  <span class="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full border border-blue-100">
+                    {{ row.category }}
+                  </span>
+                  {% else %}
+                  <span class="text-gray-400 text-xs">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if total_rows > 10 %}
+        <div class="px-6 py-3 border-t border-gray-50 bg-gray-50">
+          <p class="text-xs text-gray-400 flex items-center gap-1">
+            <span class="material-icons-round text-xs">info_outline</span>
+            Showing first 10 rows. All {{ new_count }} new contact{{ new_count|pluralize }} will be imported on confirm.
+          </p>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+
+{% else %}
+<!-- ════════════════════════════════════════════════════════════════
+     STEP 1 — MAIN IMPORT / EXPORT PAGE
+════════════════════════════════════════════════════════════════ -->
+
+<div class="max-w-3xl mx-auto">
+
+  <div class="mb-7">
+    <h1 class="text-2xl font-bold text-gray-800">Import & Export</h1>
+    <p class="text-sm text-gray-400 mt-1">Bring your contacts in or take them out</p>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6 mb-8">
+
+    <!-- Import card -->
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div class="px-6 py-5 border-b border-gray-50 flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+          <span class="material-icons-round text-blue-600 text-base">file_upload</span>
+        </div>
+        <div>
+          <h2 class="font-semibold text-gray-800 text-sm">Import Contacts</h2>
+          <p class="text-xs text-gray-400 mt-0.5">Upload XLSX, CSV, or TXT</p>
+        </div>
+      </div>
+
+      <div class="p-6">
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="upload"/>
+
+          <label for="file-input"
+            class="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all group mb-4"
+            id="drop-zone">
+            <span class="material-icons-round text-gray-300 group-hover:text-blue-400 text-4xl mb-2 transition-colors">cloud_upload</span>
+            <p class="text-sm text-gray-500 group-hover:text-blue-600 font-medium transition-colors">
+              Drop file or <span class="text-blue-600 underline">browse</span>
+            </p>
+            <p class="text-xs text-gray-400 mt-1">XLSX · CSV · TXT</p>
+            <p id="file-name" class="text-xs text-blue-600 mt-1 font-medium hidden"></p>
+          </label>
+          <input type="file" name="file" id="file-input" accept=".xlsx,.csv,.txt" class="hidden"/>
+
+          <button type="submit"
+            class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-3 rounded-xl transition-colors shadow-sm">
+            <span class="material-icons-round text-base">upload</span>
+            Upload & Preview
+          </button>
+        </form>
+
+        <div class="mt-5 space-y-2">
+          <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Expected formats</p>
+          <div class="bg-gray-50 rounded-xl p-3">
+            <p class="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
+              <span class="material-icons-round text-green-500 text-sm">table_chart</span>
+              XLSX / CSV columns
+            </p>
+            <code class="text-xs text-gray-500 block">name | phone | email | category</code>
+          </div>
+          <div class="bg-gray-50 rounded-xl p-3">
+            <p class="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
+              <span class="material-icons-round text-violet-500 text-sm">text_snippet</span>
+              TXT (pipe-delimited)
+            </p>
+            <code class="text-xs text-gray-500 block">John Doe|08012345678|john@mail.com|Work</code>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Export card -->
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div class="px-6 py-5 border-b border-gray-50 flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center">
+          <span class="material-icons-round text-green-600 text-base">file_download</span>
+        </div>
+        <div>
+          <h2 class="font-semibold text-gray-800 text-sm">Export Contacts</h2>
+          <p class="text-xs text-gray-400 mt-0.5">Download all your contacts</p>
+        </div>
+      </div>
+
+      <div class="p-6 space-y-3">
+
+        <div class="border border-gray-100 rounded-xl p-4 flex items-center gap-4">
+          <div class="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+            <span class="material-icons-round text-emerald-600 text-base">table_chart</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-semibold text-gray-800">Excel (.xlsx)</p>
+            <p class="text-xs text-gray-400 mt-0.5">Recommended · opens in Excel & Sheets</p>
+          </div>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="export_xlsx"/>
+            <button type="submit"
+              class="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-xl transition-colors shadow-sm">
+              <span class="material-icons-round text-sm">download</span>
+              Download
+            </button>
+          </form>
+        </div>
+
+        <div class="border border-gray-100 rounded-xl p-4 flex items-center gap-4">
+          <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+            <span class="material-icons-round text-blue-600 text-base">description</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-semibold text-gray-800">CSV (.csv)</p>
+            <p class="text-xs text-gray-400 mt-0.5">Lightweight · good for integrations</p>
+          </div>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="export_csv"/>
+            <button type="submit"
+              class="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-xl transition-colors shadow-sm">
+              <span class="material-icons-round text-sm">download</span>
+              Download
+            </button>
+          </form>
+        </div>
+
+        <div class="border border-gray-100 rounded-xl p-4 flex items-center gap-4">
+          <div class="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center flex-shrink-0">
+            <span class="material-icons-round text-violet-600 text-base">article</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-semibold text-gray-800">Plain text (.txt)</p>
+            <p class="text-xs text-gray-400 mt-0.5">Pipe-delimited · legacy systems</p>
+          </div>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="export_txt"/>
+            <button type="submit"
+              class="flex items-center gap-1.5 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium rounded-xl transition-colors shadow-sm">
+              <span class="material-icons-round text-sm">download</span>
+              Download
+            </button>
+          </form>
+        </div>
+
+        <div class="flex items-start gap-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+          <span class="material-icons-round text-amber-500 text-base mt-0.5 flex-shrink-0">info_outline</span>
+          <p class="text-xs text-amber-700 leading-relaxed">Exported files contain only your own contacts.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Import history -->
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div class="px-6 py-5 border-b border-gray-50 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center">
+        <span class="material-icons-round text-gray-500 text-base">history</span>
+      </div>
+      <h2 class="font-semibold text-gray-800 text-sm">Import History</h2>
+    </div>
+    {% if import_logs %}
+      <div class="divide-y divide-gray-50">
+        {% for log in import_logs %}
+        <div class="px-6 py-4 flex items-center gap-4">
+          <div class="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
+            <span class="material-icons-round text-green-600 text-base">check_circle_outline</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-3 flex-wrap">
+              <span class="text-sm font-medium text-gray-800">{{ log.imported_count }} imported</span>
+              {% if log.skipped_duplicates %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-full border border-amber-100">
+                <span class="material-icons-round text-xs">warning_amber</span>
+                {{ log.skipped_duplicates }} skipped
+              </span>
+              {% endif %}
+              {% if log.failed_rows %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-600 text-xs rounded-full border border-red-100">
+                <span class="material-icons-round text-xs">error_outline</span>
+                {{ log.failed_rows }} failed
+              </span>
+              {% endif %}
+            </div>
+            <p class="text-xs text-gray-400 mt-0.5">{{ log.created_at|date:"N j, Y — g:i A" }}</p>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="flex flex-col items-center justify-center py-12 text-center">
+        <span class="material-icons-round text-gray-200 text-5xl mb-3">upload_file</span>
+        <p class="text-sm text-gray-400 font-medium">No imports yet</p>
+        <p class="text-xs text-gray-400 mt-1">Your import history will appear here</p>
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+
+{% endif %}
+
+<script>
+  const input    = document.getElementById('file-input');
+  const dropZone = document.getElementById('drop-zone');
+  const fileName = document.getElementById('file-name');
+
+  if (input) {
+    input.addEventListener('change', function () {
+      if (this.files[0]) {
+        fileName.textContent = this.files[0].name;
+        fileName.classList.remove('hidden');
+      }
+    });
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('border-blue-400', 'bg-blue-50');
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+    });
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        fileName.textContent = file.name;
+        fileName.classList.remove('hidden');
+      }
+    });
+  }
+</script>
+{% endblock %}

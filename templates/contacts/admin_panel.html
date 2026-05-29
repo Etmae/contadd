@@ -1,0 +1,204 @@
+{% extends 'base.html' %}
+{% block title %}Admin Panel — ContactBook{% endblock %}
+{% block content %}
+
+<div class="max-w-5xl mx-auto">
+
+  <!-- Page header -->
+  <div class="mb-7">
+    <h1 class="text-2xl font-bold text-gray-800">Admin Panel</h1>
+    <p class="text-sm text-gray-400 mt-1">Platform overview and management</p>
+  </div>
+
+  <!-- Stats row -->
+  <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+      <div class="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+        <span class="material-icons-round text-blue-600 text-xl">group</span>
+      </div>
+      <div>
+        <p class="text-2xl font-bold text-gray-800">{{ total_users }}</p>
+        <p class="text-xs text-gray-400 mt-0.5">Total users</p>
+      </div>
+    </div>
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+      <div class="w-11 h-11 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
+        <span class="material-icons-round text-purple-600 text-xl">people</span>
+      </div>
+      <div>
+        <p class="text-2xl font-bold text-gray-800">{{ total_contacts }}</p>
+        <p class="text-xs text-gray-400 mt-0.5">Total contacts</p>
+      </div>
+    </div>
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+      <div class="w-11 h-11 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
+        <span class="material-icons-round text-green-600 text-xl">label</span>
+      </div>
+      <div>
+        <p class="text-2xl font-bold text-gray-800">{{ total_cats }}</p>
+        <p class="text-xs text-gray-400 mt-0.5">Total categories</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick nav -->
+  <div class="flex flex-wrap gap-3 mb-8">
+    <a href="{% url 'admin_users' %}"
+      class="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm">
+      <span class="material-icons-round text-base">manage_accounts</span>
+      Manage Users
+    </a>
+    <a href="{% url 'admin_contacts' %}"
+      class="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 hover:border-blue-300 text-gray-700 text-sm font-medium rounded-xl transition-colors shadow-sm">
+      <span class="material-icons-round text-base">contacts</span>
+      All Contacts
+    </a>
+    <form method="post" action="{% url 'admin_export_all' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="export_all_xlsx"/>
+      <button type="submit"
+        class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm">
+        <span class="material-icons-round text-base">download</span>
+        Export All (XLSX)
+      </button>
+    </form>
+    <form method="post" action="{% url 'admin_export_all' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="export_all_csv"/>
+      <button type="submit"
+        class="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 hover:border-emerald-400 text-gray-700 text-sm font-medium rounded-xl transition-colors shadow-sm">
+        <span class="material-icons-round text-base">download</span>
+        Export All (CSV)
+      </button>
+    </form>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6">
+
+    <!-- Recent registrations -->
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div class="px-6 py-5 border-b border-gray-50 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+            <span class="material-icons-round text-blue-600 text-base">person_add</span>
+          </div>
+          <h2 class="font-semibold text-gray-800 text-sm">Recent Registrations</h2>
+        </div>
+        <a href="{% url 'admin_users' %}" class="text-xs text-blue-600 hover:underline font-medium">
+          View all →
+        </a>
+      </div>
+      <div class="divide-y divide-gray-50">
+        {% for u in recent_users %}
+        <div class="px-6 py-3.5 flex items-center gap-3">
+          <div class="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+            <span class="text-blue-600 font-semibold text-xs">{{ u.username|first|upper }}</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-gray-800 truncate">{{ u.username }}</p>
+            <p class="text-xs text-gray-400 truncate">{{ u.email|default:"No email" }}</p>
+          </div>
+          <div class="text-right flex-shrink-0">
+            <p class="text-xs text-gray-400">{{ u.date_joined|date:"N j" }}</p>
+            {% if not u.is_active %}
+            <span class="text-xs text-red-500 font-medium">Inactive</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Top users by contacts -->
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div class="px-6 py-5 border-b border-gray-50 flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center">
+          <span class="material-icons-round text-purple-600 text-base">leaderboard</span>
+        </div>
+        <h2 class="font-semibold text-gray-800 text-sm">Top Users by Contacts</h2>
+      </div>
+      <div class="divide-y divide-gray-50">
+        {% for u in top_users %}
+        <div class="px-6 py-3.5 flex items-center gap-3">
+          <div class="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+            <span class="text-purple-600 font-semibold text-xs">{{ u.username|first|upper }}</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-gray-800 truncate">{{ u.username }}</p>
+            <div class="mt-1 h-1.5 bg-gray-100 rounded-full overflow-hidden w-full">
+              <div class="h-full bg-purple-400 rounded-full"
+                style="width: {% if total_contacts %}{{ u.contact_count|floatformat:0 }}{% else %}0{% endif %}%">
+              </div>
+            </div>
+          </div>
+          <span class="text-sm font-semibold text-gray-700 flex-shrink-0">
+            {{ u.contact_count }}
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Recent contacts across platform -->
+  <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mt-6">
+    <div class="px-6 py-5 border-b border-gray-50 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center">
+          <span class="material-icons-round text-green-600 text-base">history</span>
+        </div>
+        <h2 class="font-semibold text-gray-800 text-sm">Recently Added Contacts</h2>
+      </div>
+      <a href="{% url 'admin_contacts' %}" class="text-xs text-blue-600 hover:underline font-medium">
+        View all →
+      </a>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50">
+            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Contact</th>
+            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone</th>
+            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Owner</th>
+            <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Added</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for c in recent_contacts %}
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-6 py-3">
+              <div class="flex items-center gap-3">
+                {% if c.image %}
+                  <img src="{{ c.image.url }}" class="w-8 h-8 rounded-lg object-cover flex-shrink-0"/>
+                {% else %}
+                  <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                    style="background-color: {{ c.get_avatar_color }}">
+                    {{ c.get_initials }}
+                  </div>
+                {% endif %}
+                <div class="min-w-0">
+                  <p class="font-medium text-gray-800 truncate">{{ c.full_name }}</p>
+                  {% if c.category %}
+                  <span class="text-xs text-gray-400">{{ c.category.name }}</span>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+            <td class="px-6 py-3 text-gray-600 text-xs">{{ c.phone_number }}</td>
+            <td class="px-6 py-3">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
+                <span class="material-icons-round text-xs">person</span>
+                {{ c.user.username }}
+              </span>
+            </td>
+            <td class="px-6 py-3 text-xs text-gray-400">{{ c.created_at|date:"N j, Y" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
