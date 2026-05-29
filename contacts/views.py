@@ -2,14 +2,22 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib import messages
-from django.http import HttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.db.models import Q, Count
+from django.utils import timezone
 import io
-from .models import Contact, Category, ImportLog
+from datetime import timedelta
+from .models import Contact, Category, ImportLog, PendingImport
 from .forms import ContactForm
 from . import import_export as ie
 from django.core.paginator import Paginator
 
+
+class Echo:
+    """File-like adapter used by csv.writer for streaming responses."""
+
+    def write(self, value):
+        return value
 
 
 def home(request):
@@ -146,9 +154,12 @@ def delete_contact(request, contact_id):
 def import_export(request):
     user        = request.user
     import_logs = user.import_logs.all()[:10]
+    PendingImport.objects.filter(user=user, created_at__lt=timezone.now() - timedelta(hours=6)).delete()
 
     if request.method == 'POST' and request.POST.get('action') == 'cancel_import':
-        request.session.pop('import_preview_rows', None)
+        pending_id = request.session.pop('pending_import_id', None)
+        if pending_id:
+            PendingImport.objects.filter(id=pending_id, user=user).delete()
         request.session.pop('import_result',       None)
         return redirect('import_export')
 
@@ -165,16 +176,20 @@ def import_export(request):
         })
 
     if request.method == 'POST' and request.POST.get('action') == 'confirm_import':
-        rows = request.session.pop('import_preview_rows', None)
-        if not rows:
+        pending_id = request.session.pop('pending_import_id', None)
+        pending = PendingImport.objects.filter(id=pending_id, user=user).first() if pending_id else None
+        if not pending:
             messages.error(request, 'Import session expired. Please upload the file again.')
             return redirect('import_export')
-        result = ie.commit_import(user, rows)
+        result = ie.commit_import(user, pending.rows)
+        pending.delete()
         request.session['import_result'] = result
         return redirect('import_export')
 
-    if 'import_preview_rows' in request.session:
-        rows = request.session['import_preview_rows']
+    pending_id = request.session.get('pending_import_id')
+    pending = PendingImport.objects.filter(id=pending_id, user=user).first() if pending_id else None
+    if pending:
+        rows = pending.rows
         
         # OPTIMIZATION: Extract match signatures up front into highly optimized memory sets
         uploaded_phones = {str(r['phone']).strip() for r in rows if r.get('phone')}
@@ -207,12 +222,14 @@ def import_export(request):
             return redirect('import_export')
         parsed = ie.parse_file_for_preview(uploaded, uploaded.name)
         if parsed['error']:
-            messages.error(parsed['error'])
+            messages.error(request, parsed['error'])
             return redirect('import_export')
         if not parsed['rows']:
             messages.error(request, 'No valid rows found in the file.')
             return redirect('import_export')
-        request.session['import_preview_rows'] = parsed['rows']
+        PendingImport.objects.filter(user=user).delete()
+        pending = PendingImport.objects.create(user=user, rows=parsed['rows'])
+        request.session['pending_import_id'] = pending.id
         return redirect('import_export')
 
     if request.method == 'POST':
@@ -229,13 +246,17 @@ def import_export(request):
             response['Content-Disposition'] = 'attachment; filename="contacts.xlsx"'
             return response
         elif action == 'export_csv':
-            content  = ie.export_csv(user)
-            response = HttpResponse(content, content_type='text/csv')
+            import csv as csv_module
+
+            writer = csv_module.writer(Echo())
+            response = StreamingHttpResponse(
+                (writer.writerow(row) for row in ie.export_csv(user)),
+                content_type='text/csv'
+            )
             response['Content-Disposition'] = 'attachment; filename="contacts.csv"'
             return response
         elif action == 'export_txt':
-            content  = ie.export_txt(user)
-            response = HttpResponse(content, content_type='text/plain')
+            response = StreamingHttpResponse(ie.export_txt(user), content_type='text/plain')
             response['Content-Disposition'] = 'attachment; filename="contacts.txt"'
             return response
 
@@ -253,7 +274,7 @@ def _find_duplicate_groups(user):
     contacts_qs = Contact.objects.filter(user=user).select_related('category')
 
     # Find phone numbers that appear more than once for this user
-    dup_phones = (
+    dup_phones = set(
         contacts_qs
         .values('phone_number')
         .annotate(count=Count('id'))
@@ -262,7 +283,7 @@ def _find_duplicate_groups(user):
     )
 
     # Find emails that appear more than once for this user (exclude blank)
-    dup_emails = (
+    dup_emails = set(
         contacts_qs
         .exclude(email='')
         .values('email')
@@ -270,15 +291,17 @@ def _find_duplicate_groups(user):
         .filter(count__gt=1)
         .values_list('email', flat=True)
     )
+    dup_emails_lower = {email.lower() for email in dup_emails}
 
     # Find names that appear more than once (possible duplicates)
-    dup_names = (
+    dup_names = set(
         contacts_qs
         .values('full_name')
         .annotate(count=Count('id'))
         .filter(count__gt=1)
         .values_list('full_name', flat=True)
     )
+    dup_names_lower = {name.lower() for name in dup_names}
 
     # Fetch only the contacts involved in any duplicate
     involved = contacts_qs.filter(
@@ -292,12 +315,12 @@ def _find_duplicate_groups(user):
     email_groups = {}
     name_groups  = {}
 
-    for contact in involved:
+    for contact in involved.iterator(chunk_size=500):
         if contact.phone_number in dup_phones:
             phone_groups.setdefault(contact.phone_number, []).append(contact)
-        elif contact.email and contact.email.lower() in [e.lower() for e in dup_emails]:
+        elif contact.email and contact.email.lower() in dup_emails_lower:
             email_groups.setdefault(contact.email.lower(), []).append(contact)
-        elif contact.full_name in dup_names:
+        elif contact.full_name.lower() in dup_names_lower:
             name_groups.setdefault(contact.full_name.lower(), []).append(contact)
 
     groups = []
@@ -332,7 +355,7 @@ def _find_duplicate_groups(user):
 def settings_view(request):
     user             = request.user
     duplicate_groups = _find_duplicate_groups(user)
-    categories       = Category.objects.filter(Q(user=None) | Q(user=user))
+    categories       = Category.objects.filter(Q(user=None) | Q(user=user)).annotate(contact_count=Count('contacts'))
     total_contacts   = Contact.objects.filter(user=user).count()
     confirmed_count  = sum(1 for g in duplicate_groups if g['confirmed'])
     possible_count   = sum(1 for g in duplicate_groups if not g['confirmed'])
@@ -515,7 +538,7 @@ def admin_contacts(request):
 
     paginator = Paginator(contacts, 50)
     page      = paginator.get_page(page_num)
-    all_users = User.objects.all().order_by('username')
+    all_users = User.objects.only('id', 'username').order_by('username')
 
     return render(request, 'contacts/admin_contacts.html', {
         'contacts':     page,
@@ -535,34 +558,15 @@ def admin_export_all(request):
 
     if action == 'export_all_xlsx':
         import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment
 
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = 'All Contacts'
+        wb = openpyxl.Workbook(write_only=True)
+        ws = wb.create_sheet(title='All Contacts')
 
         headers = ['Name', 'Phone', 'Email', 'Category', 'Owner', 'Date Added']
         ws.append(headers)
 
-        header_font  = Font(bold=True, color='FFFFFF')
-        header_fill  = PatternFill(start_color='1E3A5F', end_color='1E3A5F', fill_type='solid')
-        header_align = Alignment(horizontal='center', vertical='center')
-
-        for col_num, _ in enumerate(headers, 1):
-            cell           = ws.cell(row=1, column=col_num)
-            cell.font      = header_font
-            cell.fill      = header_fill
-            cell.alignment = header_align
-
-        ws.column_dimensions['A'].width = 25
-        ws.column_dimensions['B'].width = 18
-        ws.column_dimensions['C'].width = 28
-        ws.column_dimensions['D'].width = 15
-        ws.column_dimensions['E'].width = 18
-        ws.column_dimensions['F'].width = 15
-
         contacts = Contact.objects.select_related('user', 'category').order_by('user__username', 'full_name')
-        for c in contacts:
+        for c in contacts.iterator(chunk_size=1000):
             ws.append([
                 c.full_name,
                 c.phone_number,
@@ -584,20 +588,39 @@ def admin_export_all(request):
 
     elif action == 'export_all_csv':
         import csv as csv_module
-        output = io.StringIO()
-        writer = csv_module.writer(output)
-        writer.writerow(['name', 'phone', 'email', 'category', 'owner'])
-        contacts = Contact.objects.select_related('user', 'category').order_by('user__username', 'full_name')
-        for c in contacts:
-            writer.writerow([
-                c.full_name,
-                c.phone_number,
-                c.email,
-                c.category.name if c.category else '',
-                c.user.username,
-            ])
-        response = HttpResponse(output.getvalue(), content_type='text/csv')
+
+        writer = csv_module.writer(Echo())
+
+        def rows():
+            yield writer.writerow(['name', 'phone', 'email', 'category', 'owner'])
+            contacts = Contact.objects.select_related('user', 'category').order_by('user__username', 'full_name')
+            for c in contacts.iterator(chunk_size=1000):
+                yield writer.writerow([
+                    c.full_name,
+                    c.phone_number,
+                    c.email,
+                    c.category.name if c.category else '',
+                    c.user.username,
+                ])
+
+        response = StreamingHttpResponse(rows(), content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="all_contacts.csv"'
+        return response
+
+    elif action == 'export_all_txt':
+        def lines():
+            contacts = Contact.objects.select_related('user', 'category').order_by('user__username', 'full_name')
+            for c in contacts.iterator(chunk_size=1000):
+                yield '|'.join([
+                    c.full_name,
+                    c.phone_number,
+                    c.email,
+                    c.category.name if c.category else '',
+                    c.user.username,
+                ]) + '\n'
+
+        response = StreamingHttpResponse(lines(), content_type='text/plain')
+        response['Content-Disposition'] = 'attachment; filename="all_contacts.txt"'
         return response
 
     return redirect('admin_panel')

@@ -261,7 +261,7 @@
         </div>
         <div class="flex items-center gap-3">
           <span class="text-xs text-gray-400">
-            {{ category.contacts.count }} contact{{ category.contacts.count|pluralize }}
+            {{ category.contact_count }} contact{{ category.contact_count|pluralize }}
           </span>
           {% if not category.is_default %}
           <form method="post" action="{% url 'delete_category' category.id %}"

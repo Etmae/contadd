@@ -5,6 +5,8 @@ import openpyxl
 from django.db.models import Q
 from .models import Contact, Category, ImportLog
 
+MAX_IMPORT_ROWS = 5000
+
 
 def _get_or_create_category(user, name):
     name = (name or '').strip()
@@ -85,12 +87,18 @@ def _parse_csv(file):
     rows   = []
     failed = 0
     try:
-        decoded = file.read().decode('utf-8-sig')
-        reader  = csv.DictReader(io.StringIO(decoded))
+        reader = csv.DictReader(io.TextIOWrapper(file, encoding='utf-8-sig', newline=''))
     except Exception:
         return {'rows': [], 'failed': 0, 'error': 'Could not read CSV file.', 'format': 'csv'}
 
-    for raw in reader:
+    for index, raw in enumerate(reader, start=1):
+        if index > MAX_IMPORT_ROWS:
+            return {
+                'rows': [],
+                'failed': 0,
+                'error': f'Import limit exceeded. Please upload at most {MAX_IMPORT_ROWS:,} rows at a time.',
+                'format': 'csv',
+            }
         row = _normalise_row(
             raw.get('name') or raw.get('Name'),
             raw.get('phone') or raw.get('Phone'),
@@ -109,12 +117,18 @@ def _parse_txt(file):
     rows   = []
     failed = 0
     try:
-        decoded = file.read().decode('utf-8-sig')
-        lines   = decoded.splitlines()
+        lines = io.TextIOWrapper(file, encoding='utf-8-sig', newline='')
     except Exception:
         return {'rows': [], 'failed': 0, 'error': 'Could not read TXT file.', 'format': 'txt'}
 
-    for line in lines:
+    for index, line in enumerate(lines, start=1):
+        if index > MAX_IMPORT_ROWS:
+            return {
+                'rows': [],
+                'failed': 0,
+                'error': f'Import limit exceeded. Please upload at most {MAX_IMPORT_ROWS:,} rows at a time.',
+                'format': 'txt',
+            }
         line = line.strip()
         if not line:
             continue
@@ -147,6 +161,14 @@ def _parse_xlsx(file):
             if i == 0:
                 headers = [str(h).strip().lower() if h else '' for h in excel_row]
                 continue
+            if i > MAX_IMPORT_ROWS:
+                wb.close()
+                return {
+                    'rows': [],
+                    'failed': 0,
+                    'error': f'Import limit exceeded. Please upload at most {MAX_IMPORT_ROWS:,} rows at a time.',
+                    'format': 'xlsx',
+                }
             if not any(excel_row):
                 continue
 
@@ -184,23 +206,64 @@ def commit_import(user, rows):
     imported = 0
     skipped  = 0
     failed   = 0
+    contacts_to_create = []
+
+    phones = {row['phone'] for row in rows if row.get('phone')}
+    emails = {row['email'] for row in rows if row.get('email')}
+    emails.update(email.lower() for email in list(emails))
+
+    existing_signatures = set()
+    existing_contacts = (
+        Contact.objects
+        .filter(user=user)
+        .filter(Q(phone_number__in=phones) | Q(email__in=emails))
+        .values_list('full_name', 'phone_number', 'email')
+    )
+    for name, phone, email in existing_contacts.iterator(chunk_size=1000):
+        name_key = (name or '').lower()
+        if phone:
+            existing_signatures.add((name_key, 'phone', phone))
+        if email:
+            existing_signatures.add((name_key, 'email', email.lower()))
+
+    categories = {}
+    for category in Category.objects.filter(Q(user=None) | Q(user=user)):
+        categories[category.name.lower()] = category
 
     for row in rows:
         try:
-            if _is_exact_duplicate(user, row['name'], row['phone'], row['email']):
+            name_key = row['name'].lower()
+            email_key = row['email'].lower()
+            phone_duplicate = row['phone'] and (name_key, 'phone', row['phone']) in existing_signatures
+            email_duplicate = email_key and (name_key, 'email', email_key) in existing_signatures
+            if phone_duplicate or email_duplicate:
                 skipped += 1
                 continue
-            cat = _get_or_create_category(user, row['category'])
-            Contact.objects.create(
+
+            cat = None
+            category_key = row['category'].strip().lower()
+            if category_key:
+                cat = categories.get(category_key)
+                if cat is None:
+                    cat = Category.objects.create(user=user, name=row['category'].strip())
+                    categories[category_key] = cat
+
+            contacts_to_create.append(Contact(
                 user=user,
                 full_name=row['name'],
                 phone_number=row['phone'],
                 email=row['email'],
                 category=cat,
-            )
+            ))
+            if row['phone']:
+                existing_signatures.add((name_key, 'phone', row['phone']))
+            if email_key:
+                existing_signatures.add((name_key, 'email', email_key))
             imported += 1
         except Exception:
             failed += 1
+
+    Contact.objects.bulk_create(contacts_to_create, batch_size=500)
 
     ImportLog.objects.create(
         user=user,
@@ -213,32 +276,14 @@ def commit_import(user, rows):
 
 
 def export_xlsx(user):
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = 'Contacts'
+    wb = openpyxl.Workbook(write_only=True)
+    ws = wb.create_sheet(title='Contacts')
 
     headers = ['Name', 'Phone', 'Email', 'Category', 'Date Added']
     ws.append(headers)
 
-    from openpyxl.styles import Font, PatternFill, Alignment
-    header_font  = Font(bold=True, color='FFFFFF')
-    header_fill  = PatternFill(start_color='2563EB', end_color='2563EB', fill_type='solid')
-    header_align = Alignment(horizontal='center', vertical='center')
-
-    for col_num, _ in enumerate(headers, 1):
-        cell           = ws.cell(row=1, column=col_num)
-        cell.font      = header_font
-        cell.fill      = header_fill
-        cell.alignment = header_align
-
-    ws.column_dimensions['A'].width = 25
-    ws.column_dimensions['B'].width = 18
-    ws.column_dimensions['C'].width = 28
-    ws.column_dimensions['D'].width = 15
-    ws.column_dimensions['E'].width = 18
-
     contacts = Contact.objects.filter(user=user).select_related('category').order_by('full_name')
-    for c in contacts:
+    for c in contacts.iterator(chunk_size=1000):
         ws.append([
             c.full_name,
             c.phone_number,
@@ -251,28 +296,23 @@ def export_xlsx(user):
 
 
 def export_csv(user):
-    output   = io.StringIO()
-    writer   = csv.writer(output)
-    writer.writerow(['name', 'phone', 'email', 'category'])
+    yield ['name', 'phone', 'email', 'category']
     contacts = Contact.objects.filter(user=user).select_related('category').order_by('full_name')
-    for c in contacts:
-        writer.writerow([
+    for c in contacts.iterator(chunk_size=1000):
+        yield [
             c.full_name,
             c.phone_number,
             c.email,
             c.category.name if c.category else '',
-        ])
-    return output.getvalue()
+        ]
 
 
 def export_txt(user):
-    lines    = []
     contacts = Contact.objects.filter(user=user).select_related('category').order_by('full_name')
-    for c in contacts:
-        lines.append('|'.join([
+    for c in contacts.iterator(chunk_size=1000):
+        yield '|'.join([
             c.full_name,
             c.phone_number,
             c.email,
             c.category.name if c.category else '',
-        ]))
-    return '\n'.join(lines)
+        ]) + '\n'
