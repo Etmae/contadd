@@ -14,15 +14,10 @@ from dotenv import load_dotenv
 from pathlib import Path
 import dj_database_url
 
-
-
 load_dotenv()  # Load environment variables from .env file
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-this-in-production-use-env-var')
@@ -48,9 +43,7 @@ ALLOWED_HOSTS = [
     "127.0.0.1",
 ]
 
-
 # Application definition
-
 INSTALLED_APPS = [
     # Explicitly load the storage engine ONLY for media fields, bypassing static files overrides completely
     'cloudinary_storage.apps.CloudinaryStorageConfig',
@@ -65,7 +58,6 @@ INSTALLED_APPS = [
     'accounts',
     'contacts',
 ]
-
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -83,7 +75,7 @@ ROOT_URLCONF = 'core.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates'],  # <-- this line
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -98,10 +90,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-
 # Database switching routing logic
 if os.environ.get('DATABASE_URL'):
-    # Production: Connects directly to Render's PostgreSQL Instance
+    # Production: Connects directly to Supabase/Render PostgreSQL Instance
     DATABASES = {
         'default': dj_database_url.config(
             conn_max_age=600,
@@ -118,10 +109,7 @@ else:
         }
     }
 
-
 # Password validation
-# https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
@@ -137,37 +125,26 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
-# https://docs.djangoproject.com/en/6.0/topics/i18n/
-
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
-
-
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 # Static and Media Routing Configurations
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
-STATIC_ROOT = BASE_DIR / 'staticfiles'  # used by collectstatic on deployment
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# Unified Modern Storage Routing (Django 4.2 -> 6.0+)
+# Unified Modern Storage Routing
 STORAGES = {
     "default": {
         "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
     },
     "staticfiles": {
-        # Standard storage completely disables the compression loops causing the build crashes
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
     },
 }

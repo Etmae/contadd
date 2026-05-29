@@ -8,6 +8,8 @@ import io
 from .models import Contact, Category, ImportLog
 from .forms import ContactForm
 from . import import_export as ie
+from django.core.paginator import Paginator
+
 
 
 def home(request):
@@ -38,6 +40,7 @@ def contact_list(request):
     search_query    = request.GET.get('q', '').strip()
     category_filter = request.GET.get('category', '')
     sort_by         = request.GET.get('sort', 'name')
+    page_num        = request.GET.get('page', 1)
 
     if search_query:
         contacts = contacts.filter(
@@ -54,6 +57,9 @@ def contact_list(request):
     else:
         contacts = contacts.order_by('full_name')
 
+    paginator = Paginator(contacts, 50)
+    page      = paginator.get_page(page_num)
+
     categories       = Category.objects.filter(Q(user=None) | Q(user=user))
     selected_contact = None
     contact_id       = request.GET.get('contact')
@@ -61,13 +67,16 @@ def contact_list(request):
         selected_contact = get_object_or_404(Contact, id=contact_id, user=user)
 
     return render(request, 'contacts/contact_list.html', {
-        'contacts':         contacts,
+        'contacts':         page,
         'categories':       categories,
         'search_query':     search_query,
         'category_filter':  category_filter,
         'sort_by':          sort_by,
         'selected_contact': selected_contact,
+        'paginator':        paginator,
+        'page':             page,
     })
+
 
 
 def _check_duplicate(user, phone_number, email, exclude_id=None):
@@ -237,55 +246,87 @@ def import_export(request):
 
 
 def _find_duplicate_groups(user):
-    # Optimize fields fetched to keep memory footprints low
-    contacts = list(Contact.objects.filter(user=user).select_related('category').only(
-        'id', 'phone_number', 'email', 'full_name', 'category__name'
-    ))
-    visited  = set()
-    groups   = []
+    """
+    Uses database aggregation to find duplicate phone numbers and emails,
+    then fetches only the affected contacts. Runs in O(n) instead of O(n²).
+    """
+    contacts_qs = Contact.objects.filter(user=user).select_related('category')
 
-    # Map lookups via hash maps for swift tracking overhead
-    for i, contact in enumerate(contacts):
-        if contact.id in visited:
-            continue
-        group        = [contact]
-        match_reason = None
-        confirmed    = False
+    # Find phone numbers that appear more than once for this user
+    dup_phones = (
+        contacts_qs
+        .values('phone_number')
+        .annotate(count=Count('id'))
+        .filter(count__gt=1)
+        .values_list('phone_number', flat=True)
+    )
 
-        c_phone = contact.phone_number
-        c_email = contact.email.strip().lower() if contact.email else None
-        c_name  = contact.full_name.strip().lower()
+    # Find emails that appear more than once for this user (exclude blank)
+    dup_emails = (
+        contacts_qs
+        .exclude(email='')
+        .values('email')
+        .annotate(count=Count('id'))
+        .filter(count__gt=1)
+        .values_list('email', flat=True)
+    )
 
-        for other in contacts[i+1:]:
-            if other.id in visited:
-                continue
-                
-            phone_match = c_phone and other.phone_number and (c_phone == other.phone_number)
-            email_match = c_email and other.email and (c_email == other.email.strip().lower())
-            name_match  = c_name == other.full_name.strip().lower()
+    # Find names that appear more than once (possible duplicates)
+    dup_names = (
+        contacts_qs
+        .values('full_name')
+        .annotate(count=Count('id'))
+        .filter(count__gt=1)
+        .values_list('full_name', flat=True)
+    )
 
-            if phone_match or email_match or name_match:
-                group.append(other)
-                visited.add(other.id)
-                if phone_match:
-                    match_reason = 'phone'
-                    confirmed    = True
-                elif email_match:
-                    match_reason = 'email'
-                    confirmed    = True
-                elif name_match and not match_reason:
-                    match_reason = 'name'
+    # Fetch only the contacts involved in any duplicate
+    involved = contacts_qs.filter(
+        Q(phone_number__in=dup_phones) |
+        Q(email__in=dup_emails) |
+        Q(full_name__in=dup_names)
+    )
 
-        if len(group) > 1:
-            visited.add(contact.id)
+    # Group them in Python — now only iterating over the small duplicate set
+    phone_groups = {}
+    email_groups = {}
+    name_groups  = {}
+
+    for contact in involved:
+        if contact.phone_number in dup_phones:
+            phone_groups.setdefault(contact.phone_number, []).append(contact)
+        elif contact.email and contact.email.lower() in [e.lower() for e in dup_emails]:
+            email_groups.setdefault(contact.email.lower(), []).append(contact)
+        elif contact.full_name in dup_names:
+            name_groups.setdefault(contact.full_name.lower(), []).append(contact)
+
+    groups = []
+
+    for phone, contacts in phone_groups.items():
+        if len(contacts) > 1:
             groups.append({
-                'contacts':     group,
-                'match_reason': match_reason,
-                'confirmed':    confirmed,
+                'contacts':     contacts,
+                'match_reason': 'phone',
+                'confirmed':    True,
+            })
+
+    for email, contacts in email_groups.items():
+        if len(contacts) > 1:
+            groups.append({
+                'contacts':     contacts,
+                'match_reason': 'email',
+                'confirmed':    True,
+            })
+
+    for name, contacts in name_groups.items():
+        if len(contacts) > 1:
+            groups.append({
+                'contacts':     contacts,
+                'match_reason': 'name',
+                'confirmed':    False,
             })
 
     return groups
-
 
 @login_required
 def settings_view(request):
@@ -456,9 +497,11 @@ def admin_toggle_user(request, user_id):
 
 @_admin_required
 def admin_contacts(request):
-    search_query    = request.GET.get('q', '').strip()
-    user_filter     = request.GET.get('user', '')
-    contacts        = Contact.objects.select_related('user', 'category').order_by('-created_at')
+    search_query = request.GET.get('q', '').strip()
+    user_filter  = request.GET.get('user', '')
+    page_num     = request.GET.get('page', 1)
+
+    contacts = Contact.objects.select_related('user', 'category').order_by('-created_at')
 
     if search_query:
         contacts = contacts.filter(
@@ -470,15 +513,18 @@ def admin_contacts(request):
     if user_filter:
         contacts = contacts.filter(user_id=user_filter)
 
+    paginator = Paginator(contacts, 50)
+    page      = paginator.get_page(page_num)
     all_users = User.objects.all().order_by('username')
 
     return render(request, 'contacts/admin_contacts.html', {
-        'contacts':     contacts,
+        'contacts':     page,
         'search_query': search_query,
         'user_filter':  user_filter,
         'all_users':    all_users,
+        'paginator':    paginator,
+        'page':         page,
     })
-
 
 @_admin_required
 def admin_export_all(request):
