@@ -166,10 +166,21 @@ def import_export(request):
 
     if 'import_preview_rows' in request.session:
         rows = request.session['import_preview_rows']
+        
+        # OPTIMIZATION: Extract match signatures up front into highly optimized memory sets
+        uploaded_phones = {str(r['phone']).strip() for r in rows if r.get('phone')}
+        uploaded_emails = {str(r['email']).strip().lower() for r in rows if r.get('email')}
+        
+        existing_contacts = Contact.objects.filter(user=user)
+        existing_phones = set(existing_contacts.filter(phone_number__in=uploaded_phones).values_list('phone_number', flat=True))
+        existing_emails = set(existing_contacts.filter(email__in=uploaded_emails).values_list('email', flat=True))
+        
+        # Light in-memory iteration completely bypassing database round-trips inside the loop
         duplicate_count = sum(
             1 for r in rows
-            if ie._is_duplicate(user, r['phone'], r['email'])
+            if (str(r.get('phone')).strip() in existing_phones) or (str(r.get('email')).strip().lower() in existing_emails)
         )
+        
         new_count = len(rows) - duplicate_count
         return render(request, 'contacts/import_export.html', {
             'step':            'preview',
@@ -187,7 +198,7 @@ def import_export(request):
             return redirect('import_export')
         parsed = ie.parse_file_for_preview(uploaded, uploaded.name)
         if parsed['error']:
-            messages.error(request, parsed['error'])
+            messages.error(parsed['error'])
             return redirect('import_export')
         if not parsed['rows']:
             messages.error(request, 'No valid rows found in the file.')
@@ -226,10 +237,14 @@ def import_export(request):
 
 
 def _find_duplicate_groups(user):
-    contacts = list(Contact.objects.filter(user=user).select_related('category'))
+    # Optimize fields fetched to keep memory footprints low
+    contacts = list(Contact.objects.filter(user=user).select_related('category').only(
+        'id', 'phone_number', 'email', 'full_name', 'category__name'
+    ))
     visited  = set()
     groups   = []
 
+    # Map lookups via hash maps for swift tracking overhead
     for i, contact in enumerate(contacts):
         if contact.id in visited:
             continue
@@ -237,35 +252,28 @@ def _find_duplicate_groups(user):
         match_reason = None
         confirmed    = False
 
-        for j, other in enumerate(contacts):
-            if i == j or other.id in visited:
+        c_phone = contact.phone_number
+        c_email = contact.email.strip().lower() if contact.email else None
+        c_name  = contact.full_name.strip().lower()
+
+        for other in contacts[i+1:]:
+            if other.id in visited:
                 continue
-            phone_match = (
-                contact.phone_number and other.phone_number and
-                contact.phone_number == other.phone_number
-            )
-            email_match = (
-                contact.email and other.email and
-                contact.email.lower() == other.email.lower()
-            )
-            name_match = (
-                contact.full_name.strip().lower() ==
-                other.full_name.strip().lower()
-            )
-            if phone_match:
+                
+            phone_match = c_phone and other.phone_number and (c_phone == other.phone_number)
+            email_match = c_email and other.email and (c_email == other.email.strip().lower())
+            name_match  = c_name == other.full_name.strip().lower()
+
+            if phone_match or email_match or name_match:
                 group.append(other)
                 visited.add(other.id)
-                match_reason = 'phone'
-                confirmed    = True
-            elif email_match:
-                group.append(other)
-                visited.add(other.id)
-                match_reason = 'email'
-                confirmed    = True
-            elif name_match:
-                group.append(other)
-                visited.add(other.id)
-                if not match_reason:
+                if phone_match:
+                    match_reason = 'phone'
+                    confirmed    = True
+                elif email_match:
+                    match_reason = 'email'
+                    confirmed    = True
+                elif name_match and not match_reason:
                     match_reason = 'name'
 
         if len(group) > 1:
@@ -433,7 +441,6 @@ def admin_toggle_user(request, user_id):
     if request.method != 'POST':
         return redirect('admin_users')
 
-    # Prevent admin from deactivating themselves
     if str(user_id) == str(request.user.id):
         messages.error(request, 'You cannot deactivate your own account.')
         return redirect('admin_users')
