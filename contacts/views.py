@@ -20,12 +20,6 @@ class Echo:
         return value
 
 
-def home(request):
-    if request.user.is_authenticated:
-        return redirect('dashboard')
-    return render(request, 'home.html')
-
-
 @login_required
 def dashboard(request):
     user             = request.user
